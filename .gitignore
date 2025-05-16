@@ -178,3 +178,5 @@ cython_debug/
 data_final_project/
 
 .DS_Store
+
+test.ipynb
