@@ -174,3 +174,7 @@ cython_debug/
 .pypirc
 
 .idea/
+
+data_final_project/
+
+.DS_Store
