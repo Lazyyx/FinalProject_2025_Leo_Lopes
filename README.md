@@ -6,36 +6,35 @@ This project was developed as part of the *Recommender Systems* course and cente
 
 ## **Overview**
 
-We implemented multiple stages in this project:
+I implemented multiple stages in this project:
 1. **Data Analysis & Visualization**
 2. **Data Cleaning and Preprocessing**
 3. **Baseline Recommenders**:
    - Popularity-Based
    - Matrix Factorization (SVD)
 4. **Alternating Least Squares (ALS)**
-5. **Evaluation and Comparison**
-
-The final goal was to understand what works, what doesn't, and *why*, given the structure and dynamics of the dataset.
+5. **Deep Autoencoder**
+6. **Evaluation and Interpretation**
 
 ---
 
 ## **1. Data Analysis & Visualization**
 
-We began our exploration in `EDA.ipynb`, a notebook that was already given, which included:
+I began my exploration in `EDA.ipynb`, a notebook that was already given, which included:
 - Distribution of watch ratios
 - User/video interaction counts
 - Initial sanity checks
 
-We extended this analysis in `EDA_advanced.ipynb` with:
-- Statistics on social network, item_categories ..
+I extended this analysis in `EDA_advanced.ipynb` with:
+- Statistics on `social_network`, `item_categories` etc.
 - Time-series plots of daily activity
 - Video duration vs. average watch ratio
 - Watch ratio distribution across top-5 video tags
 
 **Key Observations**:
-- Most users only have one friend
+- Most users have only one friend
 - Most users watch a small number of videos intensively.
-- Shorter videos are more likely to be rewatched (`watch_ratio >= 2`).
+- Shorter videos are more likely to be rewatched (`watch_ratio ≥ 2`).
 - A few tags (e.g., tag 28) are associated with higher engagement.
 
 ---
@@ -43,6 +42,7 @@ We extended this analysis in `EDA_advanced.ipynb` with:
 ## **2. Data Preprocessing**
 
 All preprocessing steps are implemented in `load_clean.py`:
+
 - Remove duplicates
 - Remove `null` / `Nan` / `None` values
 
@@ -57,10 +57,10 @@ Implemented in `Baseline_models.ipynb`.
 - Ignores personalization entirely.
 
 **Results:**
-- **High Precision@K (e.g., ~0.75)** due to popular videos being overrepresented in the test positives.
-- **Very Low Recall (~0.008)**: fails to cover the user's broader interests.
-
-**Conclusion**: Works well when a few videos dominate interaction volume, but lacks diversity and personalization.
+- **Precision@10 ≈ 0.75**, **Recall@10 ≈ 0.008**
+- Performs well only because the test set contains globally popular items that overlap across users.
+- Recall is low for the popularity baseline because it always recommends the same top items to every user, missing many of their actual relevant (but less popular) interactions.
+- Lacks personalization and diversity.
 
 ---
 
@@ -69,10 +69,8 @@ Implemented in `Baseline_models.ipynb`.
 - Trained using 5-fold cross-validation and full-train fit.
 
 **Results:**
-- **Precision@10 ~0.02**, **Recall@10 ~0.0001**
-- **Accuracy ~77%**, but misleading due to strong class imbalance.
-
-**Conclusion**: Classic SVD struggles with implicit, sparse data and doesn't optimize for ranking. Its pointwise loss is poorly suited to top-K tasks.
+- **Precision@10 ≈ 0.02**, **Recall@10 ≈ 0.0001**
+- Poor performance due to mismatch with implicit data and sparse signals.
 
 ---
 
@@ -83,7 +81,6 @@ Implemented in `ALS.ipynb`.
 We trained an **Alternating Least Squares (ALS)** model using the `implicit` library:
 - Treats binary interactions as confidence-weighted implicit signals.
 - Built the item-user confidence matrix, transposed it to get `user_items`.
-Due to API/version issues (see https://github.com/benfred/implicit/issues/535 and https://github.com/benfred/implicit/issues/708), I could not manage to compute scores and rank items per user.
 
 **Results:**
 Due to API/version issues (see https://github.com/benfred/implicit/issues/535 and https://github.com/benfred/implicit/issues/708), I could not manage to compute scores and rank items per user.
@@ -96,31 +93,77 @@ But with the theory and praticals seen in class, we can think that ALS will unde
 
 ---
 
-## **5. Evaluation**
+## **5. Deep Autoencoder**
 
-We used standard ranking metrics:
-- **Precision@K**
-- **Recall@K**
-- **NDCG@K**
-- **MAP@K**
+Implemented in `AutoEncoder.ipynb` (extended), using PyTorch.
 
-All models were trained using `big_matrix.py` and evaluated using `small_matrix.csv` as the test set.
+I designed a **2-layer deep autoencoder** that:
+- Encodes a user’s interaction vector to a latent space
+- Decodes back to reconstruct potential preferences
+- Is trained using binary cross-entropy on a dense binary matrix
+
+**Model Configuration**:
+
+    model = DeepAutoEncoder(input_dim=n_items, hidden_dims=[256, 128], dropout=0.3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=2e-5)
+
+### **Why This Model?**
+- Non-linear representation power  
+- Learns richer user embedding than SVD or ALS  
+- More expressive than shallow architectures  
+- Handles sparsity via dropout and implicit learning
+
+### **Results:**
+
+=== Deep Autoencoder @K=10 ===
+
+Precision@10: 0.5227
+
+Recall@10   : 0.0915
+
+NDCG@10     : 0.5586
+
+MAP@10      : 0.3996
+
+
+### **Interpretation:**
+- **Precision@10 (0.52)** is significantly better than SVD (~0.02) and even close to popularity (~0.75), but with added personalization.
+- **Recall (0.091)** shows the model recovers much more of the user's true interests than popularity (0.008).
+- **NDCG and MAP** show that the model not only retrieves positives but also ranks them well.
+
+Compared to all baselines, the Deep Autoencoder offers the best **balance between personalization and ranking quality**.
 
 ---
 
-## **6. Conclusions & Reflections**
+## **6. Final Thoughts and Limitations**
 
-- **Popularity-based** works surprisingly well in precision due to skewed interaction distribution.
-- **SVD** is not well-suited to binary implicit feedback tasks and fails in recall/ranking.
-- **ALS** : API issues made integration challenging. But should underperform anyway.
-- Future improvements:
-  - Integrate **user and video metadata** (tags, user activity levels).
-  - Handle **cold-start** users and items with hybrid approaches.
-  - Use ranking-optimized models (e.g., BPR, LightFM) or session-aware deep models.
+The project reveals a core truth of recommender systems:  
+> **How you define “interaction” directly affects what a model learns.**
+
+I chose to define a **positive interaction as `watch_ratio ≥ 2`**, based on the KuaiRec paper’s guidance. This ensures that recommendations are based on **strong signals** (e.g. re-watched videos), not accidental views.
+
+However, this threshold is flexible:
+- A **lower threshold** (e.g., `≥ 1`) might capture more positive signals, leading to better **recall** but noisier recommendations.
+- A **higher threshold** (e.g., `≥ 3`) would yield stronger confidence but less data.
+
+**All metrics (precision, recall, etc.) are tightly coupled to this modeling choice.**  
+Changing it changes both what I optimize and what I measure.
 
 ---
 
-## **Author**
+## **Conclusion**
+
+My experiments highlight how:
+- Simple baselines like popularity are hard to beat in precision, but weak in recall.
+- Matrix factorization must be adapted for implicit feedback.
+- ALS struggles without rich context.
+- A deep autoencoder provides a compelling hybrid between ranking, personalization, and robustness.
+
+> **The "best" model is only as good as the way we define and understand user behavior.**
+
+---
+
+**Authors**:  
 - **Léo Lopes**
 
 ---
